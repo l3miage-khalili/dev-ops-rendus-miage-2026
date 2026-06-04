@@ -1,0 +1,5 @@
+# Fichiers IDE
+.idea/
+
+# Fichiers systèmes
+.DS_Store

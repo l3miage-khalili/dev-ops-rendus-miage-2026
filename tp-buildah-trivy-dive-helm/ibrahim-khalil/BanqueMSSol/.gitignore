@@ -1,0 +1,14 @@
+# Artefacts de build — générés par build.sh / GitHub Actions
+build-reports/
+
+# Répertoires Maven
+**/target/
+
+# Fichiers systèmes
+.DS_Store
+
+# Sujet du projet fournit par l'enseignant en md (non versionné)
+sujet.md
+
+# Fichiers IDE
+.idea/

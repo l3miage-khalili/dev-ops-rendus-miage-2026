@@ -1,0 +1,211 @@
+{{/* ══════════════════════════════════════════════════════════════════
+  Deployments — 6 micro-services Spring Boot
+  Itération sur .Values.services
+════════════════════════════════════════════════════════════════════ */}}
+{{- range .Values.services }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .name }}
+  namespace: {{ include "miage-bank.namespace" $ }}
+  labels:
+    {{- include "miage-bank.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: {{ .name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/component: microservice
+spec:
+  replicas: {{ .replicas | default 1 }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .name }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .name }}
+        app.kubernetes.io/instance: {{ $.Release.Name }}
+        app.kubernetes.io/component: microservice
+    spec:
+      serviceAccountName: {{ $.Values.serviceAccount.name }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999    # UID de appuser dans l'image eclipse-temurin:11-jre-jammy
+      containers:
+        - name: {{ .name }}
+          image: {{ include "miage-bank.image" (dict "registry" $.Values.image.registry "image" .image "tag" $.Values.image.tag) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .port }}
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: miage-bank-config
+            {{- if .secretRef }}
+            - secretRef:
+                name: {{ .secretRef }}
+            {{- end }}
+          env:
+            - name: WAIT_HOSTS
+              value: {{ .waitHosts | default "" | quote }}
+            {{- if .env }}
+            {{- toYaml .env | nindent 12 }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: {{ .port }}
+            initialDelaySeconds: {{ .probeInitialDelay | default 60 }}
+            periodSeconds: 10
+            failureThreshold: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: {{ .port }}
+            initialDelaySeconds: {{ add (.probeInitialDelay | default 60) 30 }}
+            periodSeconds: 30
+            failureThreshold: 3
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .resources | nindent 12 }}
+{{- end }}
+
+{{/* ══════════════════════════════════════════════════════════════════
+  StatefulSet — MySQL (Banque-ClientService)
+════════════════════════════════════════════════════════════════════ */}}
+{{- if .Values.mysql.enabled }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.mysql.name }}
+  namespace: {{ include "miage-bank.namespace" . }}
+  labels:
+    {{- include "miage-bank.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ .Values.mysql.name }}
+    app.kubernetes.io/component: database
+spec:
+  serviceName: {{ .Values.mysql.name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.mysql.name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.mysql.name }}
+        app.kubernetes.io/component: database
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+        - name: mysql
+          image: {{ .Values.mysql.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: mysql
+              containerPort: {{ .Values.mysql.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.mysql.secretName }}
+          env:
+            - name: MYSQL_DATABASE
+              value: {{ .Values.mysql.database | quote }}
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p$(MYSQL_ROOT_PASSWORD)"]
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 5
+          livenessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "127.0.0.1"]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+          resources:
+            {{- toYaml .Values.mysql.resources | nindent 12 }}
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.mysql.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.mysql.storage }}
+{{- end }}
+
+{{/* ══════════════════════════════════════════════════════════════════
+  StatefulSet — MongoDB (Banque-CompteService)
+════════════════════════════════════════════════════════════════════ */}}
+{{- if .Values.mongodb.enabled }}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.mongodb.name }}
+  namespace: {{ include "miage-bank.namespace" . }}
+  labels:
+    {{- include "miage-bank.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ .Values.mongodb.name }}
+    app.kubernetes.io/component: database
+spec:
+  serviceName: {{ .Values.mongodb.name }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.mongodb.name }}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ .Values.mongodb.name }}
+        app.kubernetes.io/component: database
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+        - name: mongodb
+          image: {{ .Values.mongodb.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: mongodb
+              containerPort: {{ .Values.mongodb.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.mongodb.secretName }}
+          env:
+            - name: MONGO_INITDB_DATABASE
+              value: {{ .Values.mongodb.database | quote }}
+          readinessProbe:
+            tcpSocket:
+              port: 27017
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 27017
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.mongodb.resources | nindent 12 }}
+          volumeMounts:
+            - name: mongo-data
+              mountPath: /data/db
+  volumeClaimTemplates:
+    - metadata:
+        name: mongo-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: {{ .Values.mongodb.storageClassName }}
+        resources:
+          requests:
+            storage: {{ .Values.mongodb.storage }}
+{{- end }}

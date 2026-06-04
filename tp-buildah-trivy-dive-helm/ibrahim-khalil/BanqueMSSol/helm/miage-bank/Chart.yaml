@@ -1,0 +1,12 @@
+apiVersion: v2
+name: miage-bank
+description: Chart Helm pour l'application micro-services MIAGE-Bank (Spring Boot + Eureka + MySQL + MongoDB)
+type: application
+version: 1.0.0
+appVersion: "7.0"
+keywords:
+  - spring-boot
+  - microservices
+  - banking
+maintainers:
+  - name: MIAGE M2 AMS

@@ -1,0 +1,62 @@
+spring:
+  application:
+    name: comptesservice   # nom de l'application
+    # Activation remontée management dans Eureka
+    config:
+      service-registry:
+        auto-registration:
+          register-management: on
+  # configuration lien vers serveur Zipkin
+  zipkin:
+    baseurl: http://localhost:9411/
+    sender:
+      type: web # les requêtes seront envoyés en HTTP
+  # Configuration de Sleuth
+  sleuth:
+    sampler:
+      probability: 1.0
+  data:
+    mongodb:
+      host: localhost  # URL mongodb
+      port: 27017
+      database: banquebd
+      username: root
+      password: root
+      authentication-database: admin
+
+# Activation des endpoints pour le monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include:
+          env,health,
+          info,metrics,
+          loggers,mappings, prometheus
+
+# Configuration client de l'annuaire
+# Le serveur comptes va s'enregistrer comme un micro-service sur l'annuaire
+eureka:
+  client:
+    serviceUrl:
+      defaultZone: http://localhost:10001/eureka/ # url d'accès à l'annuaire
+  # Ajout métadonnée dans Eureka pour que Prometheus puisse déterminer le chemin vers les métriques
+  instance:
+    metadata-map:
+      prometheus.scrape: "true"
+      prometheus.path: "/actuator/prometheus"
+      prometheus.port: "${management.server.port}"
+      #  instance:
+      #    metadataMap:
+      # on va surcharger le nom de l'application si plusieurs instances de compte ont même IP et même port
+      # on surcharge par une valeur random si le nom de l'instance existe déjà.
+#      instanceId: ${spring.application.name}:${spring.application.instance_id:${random.value}}
+
+# Configuration du log.
+logging:
+  level:
+    org.springframework.web: INFO # Choix du niveau de log affiché
+
+# Proprietes du serveur d'entreprise
+server:
+  port: 10021   # HTTP (Tomcat) port

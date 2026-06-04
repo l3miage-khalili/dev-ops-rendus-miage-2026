@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: miage-bank-config
+  namespace: {{ include "miage-bank.namespace" . }}
+  labels:
+    {{- include "miage-bank.labels" . | nindent 4 }}
+data:
+  # ── Eureka ───────────────────────────────────────────────────────
+  # Surcharge de bnkannuaire → banque-annuaire (Service K8s)
+  EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: "http://banque-annuaire:10001/eureka/"
+  # Enregistrement par IP pod (recommandé en K8s — évite les problèmes de résolution DNS)
+  EUREKA_INSTANCE_PREFERIPADDRESS: "true"
+
+  # ── Zipkin ───────────────────────────────────────────────────────
+  SPRING_ZIPKIN_BASEURL: "http://banque-zipkin:9411/"
+
+  # ── Probes Kubernetes ────────────────────────────────────────────
+  # Active /actuator/health/liveness et /actuator/health/readiness (Spring Boot 2.3+)
+  MANAGEMENT_HEALTH_PROBES_ENABLED: "true"
+
+  # ── Profil Spring actif ──────────────────────────────────────────
+  SPRING_PROFILES_ACTIVE: "dev"
+
+  # ── Timeout du binaire /wait ─────────────────────────────────────
+  WAIT_TIMEOUT: "60"

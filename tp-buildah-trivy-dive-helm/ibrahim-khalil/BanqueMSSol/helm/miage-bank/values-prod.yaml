@@ -1,0 +1,138 @@
+# ════════════════════════════════════════════════════════════════
+# values-prod.yaml — surcharges pour l'environnement de production
+# Usage : helm upgrade --install miage-bank ./helm/miage-bank \
+#           -f helm/miage-bank/values.yaml \
+#           -f helm/miage-bank/values-prod.yaml
+# ════════════════════════════════════════════════════════════════
+
+image:
+  registry: ghcr.io/khalil   # images publiées par le pipeline GitHub Actions
+  pullPolicy: IfNotPresent
+  tag: "7.0"
+
+ingress:
+  host: miage-bank.prod.example.com
+  tls: true                  # TLS activé en production
+
+networkPolicy:
+  ingressControllerNamespace: traefik-system
+  ingressControllerSelector:
+    app.kubernetes.io/name: traefik
+
+# Ressources augmentées pour la production
+services:
+  - name: banque-annuaire
+    image: banque-annuaire
+    port: 10001
+    replicas: 2
+    waitHosts: ""
+    secretRef: ""
+    probeInitialDelay: 45
+    env: []
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "200m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+  - name: banque-configserver
+    image: banque-configserver
+    port: 10003
+    replicas: 2
+    waitHosts: "banque-annuaire:10001"
+    secretRef: "banque-git-secret"
+    probeInitialDelay: 60
+    env: []
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "200m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+  - name: banque-clientservice
+    image: banque-clientservice
+    port: 10011
+    replicas: 2
+    waitHosts: "banque-configserver:10003,banque-mysql:3306"
+    secretRef: "banque-mysql-secret"
+    probeInitialDelay: 90
+    env:
+      - name: SPRING_DATASOURCE_URL
+        value: "jdbc:mysql://banque-mysql:3306/banquebd"
+      - name: SPRING_JPA_DATABASEPLATFORM
+        value: "org.hibernate.dialect.MySQL5Dialect"
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+  - name: banque-compteservice
+    image: banque-compteservice
+    port: 10021
+    replicas: 2
+    waitHosts: "banque-configserver:10003,banque-mongo:27017"
+    secretRef: "banque-mongo-secret"
+    probeInitialDelay: 90
+    env:
+      - name: SPRING_DATA_MONGODB_HOST
+        value: "banque-mongo"
+      - name: SPRING_DATA_MONGODB_PORT
+        value: "27017"
+      - name: SPRING_DATA_MONGODB_DATABASE
+        value: "banquebd"
+      - name: SPRING_DATA_MONGODB_AUTHENTICATIONDATABASE
+        value: "admin"
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+  - name: banque-compositeservice
+    image: banque-compositeservice
+    port: 10031
+    replicas: 2
+    waitHosts: "banque-configserver:10003,banque-clientservice:10011,banque-compteservice:10021"
+    secretRef: ""
+    probeInitialDelay: 90
+    env: []
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+  - name: banque-apigateway
+    image: banque-apigateway
+    port: 10000
+    replicas: 2
+    waitHosts: "banque-configserver:10003,banque-clientservice:10011,banque-compteservice:10021,banque-compositeservice:10031"
+    secretRef: ""
+    probeInitialDelay: 120
+    env: []
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+mysql:
+  storage: 10Gi
+  storageClassName: ssd
+
+mongodb:
+  storage: 10Gi
+  storageClassName: ssd

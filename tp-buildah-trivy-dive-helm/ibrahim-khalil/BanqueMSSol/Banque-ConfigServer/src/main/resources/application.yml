@@ -1,0 +1,53 @@
+# Proprietes de l'application
+spring:
+  application:
+    name: configservice
+    # Activation remontée management dans Eureka
+    config:
+      service-registry:
+        auto-registration:
+          register-management: on
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://bitbucket.org/CTeyssie/miage-m2-ams-microbanque-config.git
+          username: VotreCpt
+          password: VotreMdp
+          clone-on-start: true
+
+# Activation des endpoints pour le monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include:
+          env,health,
+          info,metrics,
+          loggers,mappings, prometheus
+# Configuration client de l'annuaire
+# Le serveur clients-comptes va s'enregistrer comme un micro-service sur l'annuaire
+eureka:
+  client:
+    serviceUrl:
+    # url d'accès à l'annuaire
+    # SANS DOCKER
+    # defaultZone: http://localhost:10001/eureka/
+    # AVEC DOCKER
+     defaultZone: http://bnkannuaire:10001/eureka/
+  instance:
+    metadata-map:
+      prometheus.scrape: "true"
+      prometheus.path: "/actuator/prometheus"
+      prometheus.port: "${management.server.port}"
+
+# Configuration du log.
+logging:
+  level:
+   org.springframework.web: DEBUG # Choix du niveau de log affiché
+
+
+# Proprietes du serveur d'entreprise
+server:
+  port: 10003   # HTTP (Tomcat) port
+

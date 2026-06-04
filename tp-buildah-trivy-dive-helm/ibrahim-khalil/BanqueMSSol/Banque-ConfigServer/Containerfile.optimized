@@ -1,0 +1,41 @@
+# Stage 1 — Compilation Maven
+FROM docker.io/library/maven:3.9-eclipse-temurin-11 AS build
+WORKDIR /workspace
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+COPY src ./src
+RUN mvn package -DskipTests -B
+
+# Stage 2 — Extraction des layers Spring Boot + téléchargement du binaire wait
+# Optimisation : wait est téléchargé ici (curl déjà présent) pour éviter apt-get dans le stage runtime
+FROM docker.io/library/eclipse-temurin:11-jre-jammy AS extract
+WORKDIR /workspace
+COPY --from=build /workspace/target/*.jar application.jar
+RUN java -Djarmode=layertools -jar application.jar extract
+RUN curl -fsSL https://github.com/ufoscout/docker-compose-wait/releases/download/2.9.0/wait \
+        -o /wait && chmod +x /wait
+
+# Stage 3 — Image runtime minimale (aucun apt-get)
+FROM docker.io/library/eclipse-temurin:11-jre-jammy
+LABEL org.opencontainers.image.title="banque-configserver" \
+      org.opencontainers.image.description="MIAGE-Bank — serveur de configuration Spring Cloud" \
+      org.opencontainers.image.version="7.0"
+
+WORKDIR /app
+
+COPY --from=extract /workspace/dependencies/ .
+COPY --from=extract /workspace/snapshot-dependencies/ .
+COPY --from=extract /workspace/spring-boot-loader/ .
+COPY --from=extract /workspace/application/ .
+COPY --from=extract /wait /wait
+
+COPY startup.sh /startup.sh
+RUN chmod +x /startup.sh
+
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser \
+    && chown -R appuser:appgroup /app
+USER appuser
+
+EXPOSE 10003
+
+ENTRYPOINT ["/bin/sh", "-c", "/startup.sh"]
