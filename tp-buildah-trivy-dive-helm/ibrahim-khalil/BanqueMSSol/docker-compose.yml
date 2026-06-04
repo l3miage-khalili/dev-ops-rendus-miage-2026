@@ -1,0 +1,170 @@
+# Docker Compose Banque Micro-Service
+
+# Automatise le lancement de l'infrastructure micro-services
+
+version: '3.8'
+
+# Define services
+services:
+  # EDGE annuaire Eureka
+  banque-annuaire:
+    # Lancement service Annuaire
+    build:
+      context: Banque-Annuaire # Répertoire (dans répertoire courant) contenant le dockerfile
+      dockerfile: Dockerfile
+    image: banque-annuaire:7.0 # Pour placer le TAG de version sur le nom de l'image
+    ports:
+      - "10001:10001" # Exposition port 10001 du conteneur Annuaire vers 1001 de l'hôte.
+    restart: always 
+    container_name: bnkannuaire
+    networks:
+      - backend
+  # EDGE Serveur de configuration
+  banque-configsrv:
+    # Lancement service de configuration
+    build:
+      context: Banque-ConfigServer # Répertoire (dans répertoire courant) contenant le dockerfile
+      dockerfile: Dockerfile
+    image: banque-configsrv:7.0 # Pour placer le TAG de version sur le nom de l'image
+    restart: "no" 
+    depends_on: 
+      - banque-annuaire
+    container_name: bnkconfigsrv
+    networks: 
+      - backend
+    environment:
+      WAIT_HOSTS: bnkannuaire:10001 # Attente demarrage service Annuaire (attente 30s MAX)
+  # Micro-service de gestion des comptes clients
+  banque-clientservice:
+    # Lancement service de gestion des clients
+    build:
+      context: Banque-clientservice # Répertoire (dans répertoire courant) contenant le dockerfile
+      dockerfile: Dockerfile
+    image: banque-clientservice:7.0 # Pour placer le TAG de version sur le nom de l'image
+    restart: "no" 
+    container_name: bnkclientservice
+    depends_on: 
+      - banque-configsrv
+      - banque-mysql
+    networks: 
+      - backend
+      - backclients
+    environment:
+      WAIT_HOSTS: bnkconfigsrv:10003, bnkmysql:3306 # Attente demarrage services (attente 30s MAX)
+  # Micro-service de gestion des comptes bancaires
+  banque-compteservice:
+    # Lancement service de comptes bancaires
+    build:
+      context: Banque-compteservice # Répertoire (dans répertoire courant) contenant le dockerfile
+      dockerfile: Dockerfile
+    image: banque-compteservice:7.0 # Pour placer le TAG de version sur le nom de l'image
+    restart: "no" 
+    container_name: bnkcompteservice
+    depends_on: 
+      - banque-configsrv
+      - banque-mongo
+    networks: 
+      - backend
+      - backcomptes
+    environment:
+      WAIT_HOSTS: bnkconfigsrv:10003, bnkmongo:27017 # Attente demarrage services (attente 30s MAX)
+  # Micro-service composite de gestion des comptes client avec comptes bancaires
+  banque-clientcompte:
+    # Lancement service de client-comptes 
+    build:
+      context: Banque-compositeservice # Répertoire (dans répertoire courant) contenant le dockerfile
+      dockerfile: Dockerfile
+    image: banque-compositeservice:7.0 # Pour placer le TAG de version sur le nom de l'image
+    restart: "no" 
+    container_name: bnkclientcompte
+    depends_on: 
+      - banque-configsrv
+      - banque-compteservice
+      - banque-clientservice
+    networks: 
+      - backend
+    environment:
+      WAIT_HOSTS: bnkconfigsrv:10003, bnkmongo:27017, bnkcompteservice:10021, bnkclientservice:10011 # Attente demarrage services (attente 30s MAX)
+
+  # Micro-service API Gateway
+  banque-apigateway:
+    # Lancement service de client-comptes 
+    build:
+      context: Banque-apigateway # Répertoire (dans répertoire courant) contenant le dockerfile
+      dockerfile: Dockerfile
+    image: banque-apigateway:7.0 # Pour placer le TAG de version sur le nom de l'image
+    ports:
+      - "10000:10000" # Exposition port 10000 API Gateway
+    restart: "no" 
+    container_name: bnkapigateway
+    depends_on: 
+      - banque-configsrv
+      - banque-compteservice
+      - banque-clientservice
+      - banque-clientcompte
+    networks: 
+      - backend
+    environment:
+      WAIT_HOSTS: bnkconfigsrv:10003, bnkmongo:27017, bnkcompteservice:10021, bnkclientservice:10011, bnkclientservice:10031  # Attente demarrage services (attente 30s MAX)
+
+  # Serveur Prometheus
+  banque-prometheus:
+    # Lancement service Prometheus
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    restart: "no" 
+    container_name: bnkprometheus
+    depends_on: 
+      - banque-annuaire
+    networks: 
+      - backend
+    volumes:
+      - ./config-prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    environment:
+      WAIT_HOSTS: bnkannuaire:10001 # Attente demarrage services (attente 30s MAX)
+
+  # Serveur Zipkin
+  banque-zipkin:
+    # Lancement service Zipkin
+    image: openzipkin/zipkin
+    ports:
+      - "9411:9411"
+    restart: "no" 
+    container_name: bnkzipkin
+    networks: 
+      - backend
+
+  # Database Service (Mysql)
+  banque-mysql:
+    image: mysql:oracle
+    restart: always
+    container_name: bnkmysql
+    environment:
+      MYSQL_DATABASE: banquebd
+      MYSQL_ROOT_PASSWORD: root
+    #volumes:
+    #  - db-data-mysql:/var/lib/mysql
+    networks:
+      - backclients
+ 
+  # Database Service (Mongo)
+  banque-mongo:
+    image: mongo:latest
+    restart: always
+    container_name: bnkmongo
+    #volumes:
+    #  - db-data-mongo:/data/db
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root
+      MONGO_INITDB_DATABASE: banquebd
+    networks:
+      - backcomptes 
+
+# Networks to be created to facilitate communication between containers
+networks:
+  backend:
+  backclients:
+  backcomptes:
+

@@ -1,0 +1,75 @@
+{{/* ══════════════════════════════════════════════════════════════════
+  Services ClusterIP — 6 micro-services Spring Boot
+  L'exposition externe se fait uniquement via l'Ingress (banque-apigateway)
+════════════════════════════════════════════════════════════════════ */}}
+{{- range .Values.services }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .name }}
+  namespace: {{ include "miage-bank.namespace" $ }}
+  labels:
+    {{- include "miage-bank.labels" $ | nindent 4 }}
+    app.kubernetes.io/name: {{ .name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/component: microservice
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ .name }}
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+  ports:
+    - name: http
+      port: {{ .port }}
+      targetPort: {{ .port }}
+      protocol: TCP
+{{- end }}
+
+{{/* ══════════════════════════════════════════════════════════════════
+  Service ClusterIP — MySQL
+════════════════════════════════════════════════════════════════════ */}}
+{{- if .Values.mysql.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.mysql.name }}
+  namespace: {{ include "miage-bank.namespace" . }}
+  labels:
+    {{- include "miage-bank.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ .Values.mysql.name }}
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ .Values.mysql.name }}
+  ports:
+    - name: mysql
+      port: {{ .Values.mysql.port }}
+      targetPort: {{ .Values.mysql.port }}
+{{- end }}
+
+{{/* ══════════════════════════════════════════════════════════════════
+  Service ClusterIP — MongoDB
+════════════════════════════════════════════════════════════════════ */}}
+{{- if .Values.mongodb.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.mongodb.name }}
+  namespace: {{ include "miage-bank.namespace" . }}
+  labels:
+    {{- include "miage-bank.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ .Values.mongodb.name }}
+    app.kubernetes.io/component: database
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ .Values.mongodb.name }}
+  ports:
+    - name: mongodb
+      port: {{ .Values.mongodb.port }}
+      targetPort: {{ .Values.mongodb.port }}
+{{- end }}

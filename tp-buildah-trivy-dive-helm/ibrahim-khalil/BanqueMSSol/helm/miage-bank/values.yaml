@@ -1,0 +1,267 @@
+# ════════════════════════════════════════════════════════════════
+# values.yaml — MIAGE-Bank Helm Chart (environnement dev / minikube)
+# ════════════════════════════════════════════════════════════════
+
+global:
+  namespace: miage-bank
+
+# ────────────────────────────────────────────────
+# Images OCI — construites en Partie A avec Buildah
+# ────────────────────────────────────────────────
+image:
+  registry: "localhost"  # images chargées dans minikube via minikube image load
+  tag: "7.0"
+  pullPolicy: Never      # utilise les images pré-chargées — ne tente aucun pull
+
+# ────────────────────────────────────────────────
+# Micro-services Spring Boot
+# Les WAIT_HOSTS traduisent les noms Docker Compose vers les noms de Service K8s :
+#   bnkannuaire   → banque-annuaire
+#   bnkconfigsrv  → banque-configserver
+#   bnkmysql      → banque-mysql
+#   bnkmongo      → banque-mongo
+# ────────────────────────────────────────────────
+services:
+  - name: banque-annuaire
+    image: banque-annuaire
+    port: 10001
+    replicas: 1
+    waitHosts: ""
+    secretRef: ""
+    probeInitialDelay: 90
+    env: []
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+  - name: banque-configserver
+    image: banque-configserver
+    port: 10003
+    replicas: 1
+    waitHosts: "banque-annuaire:10001"
+    secretRef: "banque-git-secret"
+    probeInitialDelay: 120
+    env: []
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+  - name: banque-clientservice
+    image: banque-clientservice
+    port: 10011
+    replicas: 1
+    waitHosts: "banque-configserver:10003,banque-mysql:3306"
+    secretRef: "banque-mysql-secret"
+    probeInitialDelay: 150
+    env:
+      - name: SPRING_CONFIG_IMPORT
+        value: "optional:configserver:http://banque-configserver:10003"
+      - name: SPRING_DATASOURCE_URL
+        value: "jdbc:mysql://banque-mysql:3306/banquebd"
+      - name: SPRING_JPA_DATABASEPLATFORM
+        value: "org.hibernate.dialect.MySQL5Dialect"
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+  - name: banque-compteservice
+    image: banque-compteservice
+    port: 10021
+    replicas: 1
+    waitHosts: "banque-configserver:10003,banque-mongo:27017"
+    secretRef: "banque-mongo-secret"
+    probeInitialDelay: 150
+    env:
+      # Pas de SPRING_CONFIG_IMPORT → le config-server (banque-configserver) n'est jamais
+      # consulté. Le JAR tente bnkconfigsrv:10003 (Docker-Compose) qui n'existe pas en K8s
+      # → optional: → silencieusement ignoré. Résultat : spring.data.mongodb.uri reste null.
+      #
+      # SPRING_APPLICATION_JSON (priorité 10, la plus haute hors CLI) fournit :
+      #   • MongoDB individuel SANS uri (uri=null → validateConfiguration() passe)
+      #   • server.port=10021
+      #   • eureka.client.serviceUrl.defaultZone (clé camelCase via JSON)
+      # $(MONGO_USER) / $(MONGO_PASS) sont substitués par K8s depuis banque-mongo-secret
+      # (envFrom traité avant env → variables disponibles pour la substitution $(VAR_NAME)).
+      - name: SPRING_APPLICATION_JSON
+        value: '{"spring":{"data":{"mongodb":{"host":"banque-mongo","port":27017,"database":"banquebd","authentication-database":"admin","username":"$(MONGO_USER)","password":"$(MONGO_PASS)"}}},"server":{"port":10021},"eureka":{"client":{"serviceUrl":{"defaultZone":"http://banque-annuaire:10001/eureka/"}}}}'
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+  - name: banque-compositeservice
+    image: banque-compositeservice
+    port: 10031
+    replicas: 1
+    waitHosts: "banque-configserver:10003,banque-clientservice:10011,banque-compteservice:10021"
+    secretRef: ""
+    probeInitialDelay: 150
+    env:
+      - name: SPRING_CONFIG_IMPORT
+        value: "optional:configserver:http://banque-configserver:10003"
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+  - name: banque-apigateway
+    image: banque-apigateway
+    port: 10000
+    replicas: 1
+    waitHosts: "banque-configserver:10003,banque-clientservice:10011,banque-compteservice:10021,banque-compositeservice:10031"
+    secretRef: ""
+    probeInitialDelay: 180
+    env:
+      - name: SPRING_CONFIG_IMPORT
+        value: "optional:configserver:http://banque-configserver:10003"
+      - name: SPRING_APPLICATION_JSON
+        value: '{"server":{"port":10000}}'
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "100m"
+      limits:
+        memory: "512Mi"
+        cpu: "500m"
+
+# ────────────────────────────────────────────────
+# MySQL — base de données de Banque-ClientService
+# ────────────────────────────────────────────────
+mysql:
+  enabled: true
+  name: banque-mysql
+  image: mysql:8.0
+  port: 3306
+  database: banquebd
+  secretName: banque-mysql-secret
+  storage: 1Gi
+  storageClassName: standard
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# ────────────────────────────────────────────────
+# MongoDB — base de données de Banque-CompteService
+# ────────────────────────────────────────────────
+mongodb:
+  enabled: true
+  name: banque-mongo
+  image: mongo:6.0
+  port: 27017
+  database: banquebd
+  secretName: banque-mongo-secret
+  storage: 1Gi
+  storageClassName: standard
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "200m"
+    limits:
+      memory: "1Gi"
+      cpu: "500m"
+
+# ────────────────────────────────────────────────
+# Ingress — expose Banque-APIGateway via Traefik
+# ────────────────────────────────────────────────
+ingress:
+  enabled: true
+  className: traefik
+  host: miage-bank.local
+  tls: false
+  serviceName: banque-apigateway
+  servicePort: 10000
+
+# ────────────────────────────────────────────────
+# NetworkPolicy
+# ────────────────────────────────────────────────
+networkPolicy:
+  enabled: true
+  # Namespace où tourne le controller d'ingress (Traefik ou nginx)
+  ingressControllerNamespace: kube-system
+  ingressControllerSelector:
+    app.kubernetes.io/name: traefik
+
+# ────────────────────────────────────────────────
+# ServiceAccount + RBAC (least privilege)
+# ────────────────────────────────────────────────
+serviceAccount:
+  name: miage-bank-sa
+
+# ────────────────────────────────────────────────
+# Vault + External Secrets Operator (approche recommandée)
+# Prérequis : ESO installé + Vault configuré avec le rôle K8s
+# ────────────────────────────────────────────────
+vault:
+  enabled: true
+  address: "http://vault.vault.svc.cluster.local:8200"
+  authMountPath: "kubernetes"
+  role: "miage-bank"
+  secretStoreName: "vault-backend"
+  refreshInterval: "1h"
+  secrets:
+    - vaultPath: "secret/data/miage-bank/mysql"
+      targetName: "banque-mysql-secret"
+      data:
+        - secretKey: MYSQL_ROOT_PASSWORD
+          property: password
+        - secretKey: SPRING_DATASOURCE_PASSWORD
+          property: password
+        - secretKey: SPRING_DATASOURCE_USERNAME
+          property: username
+    - vaultPath: "secret/data/miage-bank/mongodb"
+      targetName: "banque-mongo-secret"
+      data:
+        - secretKey: MONGO_INITDB_ROOT_PASSWORD
+          property: password
+        - secretKey: MONGO_INITDB_ROOT_USERNAME
+          property: username
+        - secretKey: MONGO_PASS
+          property: password
+        - secretKey: MONGO_USER
+          property: username
+    - vaultPath: "secret/data/miage-bank/git"
+      targetName: "banque-git-secret"
+      data:
+        - secretKey: SPRING_CLOUD_CONFIG_SERVER_GIT_USERNAME
+          property: username
+        - secretKey: SPRING_CLOUD_CONFIG_SERVER_GIT_PASSWORD
+          property: password
+
+# ────────────────────────────────────────────────
+# Secrets K8s natifs (fallback si Vault non disponible)
+# Activer avec : --set nativeSecrets.enabled=true
+# ⚠ Les valeurs doivent être surchargées via --set ou un fichier séparé
+# ────────────────────────────────────────────────
+nativeSecrets:
+  enabled: false
+  mysql:
+    rootPassword: ""
+    username: "root"
+  mongodb:
+    rootUsername: "root"
+    rootPassword: ""
+  git:
+    username: ""
+    password: ""

@@ -1,0 +1,8 @@
+# Artefacts de build — générés par build.sh / GitHub Actions
+build-reports/
+
+# Répertoires Maven
+**/target/
+
+# Fichiers systèmes
+.DS_Store

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "miage-bank.namespace" . }}
+  labels:
+    {{- include "miage-bank.labels" . | nindent 4 }}
+    kubernetes.io/metadata.name: {{ include "miage-bank.namespace" . }}

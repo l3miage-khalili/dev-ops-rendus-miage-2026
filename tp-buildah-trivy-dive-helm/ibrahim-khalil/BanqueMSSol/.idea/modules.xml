@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/Banque-APIGateway/Banque-APIGateway.iml" filepath="$PROJECT_DIR$/Banque-APIGateway/Banque-APIGateway.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Banque-ClientService/Banque-ClientService.iml" filepath="$PROJECT_DIR$/Banque-ClientService/Banque-ClientService.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Banque-CompositeService/Banque-CompositeService.iml" filepath="$PROJECT_DIR$/Banque-CompositeService/Banque-CompositeService.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Banque-CompteService/Banque-CompteService.iml" filepath="$PROJECT_DIR$/Banque-CompteService/Banque-CompteService.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Banque-ConfigServer/Banque-ConfigServer.iml" filepath="$PROJECT_DIR$/Banque-ConfigServer/Banque-ConfigServer.iml" />
+      <module fileurl="file://$PROJECT_DIR$/Banque-Annuaire/banque-annuaire.iml" filepath="$PROJECT_DIR$/Banque-Annuaire/banque-annuaire.iml" />
+    </modules>
+  </component>
+</project>

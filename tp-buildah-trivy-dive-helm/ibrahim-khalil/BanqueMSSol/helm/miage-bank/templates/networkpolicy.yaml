@@ -1,0 +1,76 @@
+{{- if .Values.networkPolicy.enabled }}
+# ── 1. Default-deny : bloque tout trafic entrant dans le namespace ──────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ include "miage-bank.namespace" . }}
+  labels:
+    {{- include "miage-bank.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# ── 2. Trafic intra-namespace : les services peuvent se parler ──────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: {{ include "miage-bank.namespace" . }}
+  labels:
+    {{- include "miage-bank.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+---
+# ── 3. Trafic depuis le controller d'ingress (Traefik / nginx) ──────────────────
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-ingress-controller
+  namespace: {{ include "miage-bank.namespace" . }}
+  labels:
+    {{- include "miage-bank.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.ingress.serviceName }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressControllerNamespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.ingressControllerSelector | nindent 14 }}
+---
+# ── 4. Autoriser le trafic depuis minikube (fallback sans Traefik) ───────────────
+# Autorise le CIDR du node minikube sur le port de l'API Gateway
+# À désactiver si Traefik est déployé
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-minikube-node
+  namespace: {{ include "miage-bank.namespace" . }}
+  labels:
+    {{- include "miage-bank.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ .Values.ingress.serviceName }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 192.168.0.0/16
+        - ipBlock:
+            cidr: 10.0.0.0/8
+{{- end }}

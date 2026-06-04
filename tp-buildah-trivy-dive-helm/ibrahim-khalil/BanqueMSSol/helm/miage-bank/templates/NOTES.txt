@@ -1,0 +1,47 @@
+╔═══════════════════════════════════════════════════════════════╗
+║              MIAGE-Bank — Déploiement Helm                    ║
+╚═══════════════════════════════════════════════════════════════╝
+
+Release : {{ .Release.Name }}
+Namespace : {{ include "miage-bank.namespace" . }}
+
+── Accès à l'application ──────────────────────────────────────
+
+{{- if .Values.ingress.enabled }}
+
+  Via Ingress Traefik :
+    Ajoutez cette entrée dans /etc/hosts :
+      $(minikube ip)   {{ .Values.ingress.host }}
+
+    Puis accédez à :
+      http://{{ .Values.ingress.host }}/api/clients
+      http://{{ .Values.ingress.host }}/api/comptes
+
+  Via minikube tunnel (alternative) :
+    minikube tunnel
+    curl http://{{ .Values.ingress.host }}/actuator/health
+{{- end }}
+
+── Vérification du déploiement ────────────────────────────────
+
+  kubectl get pods -n {{ include "miage-bank.namespace" . }}
+  kubectl get svc  -n {{ include "miage-bank.namespace" . }}
+  kubectl get ingress -n {{ include "miage-bank.namespace" . }}
+
+── Secrets ────────────────────────────────────────────────────
+
+{{- if .Values.vault.enabled }}
+  Secrets gérés via Vault + External Secrets Operator.
+  Vérifier la synchronisation :
+    kubectl get externalsecret -n {{ include "miage-bank.namespace" . }}
+{{- end }}
+{{- if .Values.nativeSecrets.enabled }}
+  ⚠  Mode fallback — secrets K8s natifs actifs.
+  Ces secrets doivent être supprimés dès que Vault est disponible.
+{{- end }}
+
+── Euréka Dashboard ───────────────────────────────────────────
+
+  kubectl port-forward svc/banque-annuaire 10001:10001 -n {{ include "miage-bank.namespace" . }}
+  Ouvrir : http://localhost:10001
+
