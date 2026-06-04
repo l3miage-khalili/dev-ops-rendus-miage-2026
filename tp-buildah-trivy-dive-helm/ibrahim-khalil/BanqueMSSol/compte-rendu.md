@@ -580,9 +580,9 @@ Rapports  :
 
 > **Note sur la gate CRITICAL** : la gate échoue sur nos images en raison des dépendances Java obsolètes (Spring Boot 2.6.4, Tomcat 9.0.58 — voir Q3). Le flag `--skip-critical-gate` est fourni pour permettre la démonstration complète de la chaîne. En production, le build doit rester bloquant sur les CRITICAL.
 
-#### `.github/workflows/build.yml` — pipeline GitHub Actions (Bonus)
+#### `.github/workflows/build-ibrahim-khalil.yml` — pipeline GitHub Actions (Bonus)
 
-Le workflow est déclenché sur `push`/`pull_request` vers `main` dès qu'un Containerfile, un `pom.xml` ou le script `build.sh` est modifié.
+Le workflow `.github/workflows/build-ibrahim-khalil.yml` (à la racine du dépôt) est déclenché sur `push`/`pull_request` vers `main` dès qu'un Containerfile, un `pom.xml` ou le script `build.sh` est modifié sous `tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol/`.
 
 **Structure :**
 

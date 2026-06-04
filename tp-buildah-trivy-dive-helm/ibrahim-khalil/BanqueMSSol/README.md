@@ -162,7 +162,7 @@ rules:
 
 ## Pipeline GitHub Actions
 
-Le workflow `.github/workflows/build.yml` s'exécute sur `push`/`pull_request` vers `main`
+Le workflow `.github/workflows/build-ibrahim-khalil.yml` (à la racine du dépôt) s'exécute sur `push`/`pull_request` vers `main`
 et enchaîne pour chacun des 6 services :
 
 1. **Lint** — Hadolint avec upload SARIF vers GitHub Security

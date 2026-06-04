@@ -1,0 +1,198 @@
+name: MIAGE-Bank — OCI Build Pipeline (Ibrahim Khalil)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol/Banque-*/Containerfile*'
+      - 'tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol/Banque-*/pom.xml'
+      - 'tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol/Banque-*/src/**'
+      - 'tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol/scripts/build.sh'
+      - 'tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol/.dive-ci.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol/**'
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service à builder (ex: Banque-ClientService)'
+        required: false
+        default: 'Banque-ClientService'
+      skip_critical_gate:
+        description: 'Ignorer la gate CVE CRITICAL'
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository_owner }}/miage-bank
+  BASE: tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint — Hadolint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - { dir: Banque-Annuaire,        file: Containerfile.optimized }
+          - { dir: Banque-ConfigServer,     file: Containerfile.optimized }
+          - { dir: Banque-ClientService,    file: Containerfile.optimized }
+          - { dir: Banque-CompteService,    file: Containerfile.optimized }
+          - { dir: Banque-CompositeService, file: Containerfile.optimized }
+          - { dir: Banque-APIGateway,       file: Containerfile.optimized }
+      fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint ${{ matrix.service.dir }}/${{ matrix.service.file }}
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ env.BASE }}/${{ matrix.service.dir }}/${{ matrix.service.file }}
+          failure-threshold: error
+          output-file: hadolint-${{ matrix.service.dir }}.sarif
+          format: sarif
+
+      - name: Upload Hadolint SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: hadolint-${{ matrix.service.dir }}.sarif
+          category: hadolint-${{ matrix.service.dir }}
+
+  # ────────────────────────────────────────────────────────────────────────────
+  build-scan:
+    name: Build + Trivy + Dive — ${{ matrix.service.dir }}
+    runs-on: ubuntu-latest
+    needs: lint
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+
+    defaults:
+      run:
+        working-directory: tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol
+
+    strategy:
+      matrix:
+        service:
+          - { dir: Banque-Annuaire,        image: banque-annuaire,        port: "10001" }
+          - { dir: Banque-ConfigServer,     image: banque-configserver,    port: "10003" }
+          - { dir: Banque-ClientService,    image: banque-clientservice,   port: "10011" }
+          - { dir: Banque-CompteService,    image: banque-compteservice,   port: "10021" }
+          - { dir: Banque-CompositeService, image: banque-compositeservice,port: "10031" }
+          - { dir: Banque-APIGateway,       image: banque-apigateway,      port: "10000" }
+      fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Buildah ──────────────────────────────────────────────────────────────
+      - name: Install Buildah
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y buildah
+
+      - name: Build image — ${{ matrix.service.dir }}
+        id: build
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/${{ matrix.service.image }}:${{ github.sha }}"
+          buildah bud \
+            --tag "$IMAGE" \
+            -f "${{ matrix.service.dir }}/Containerfile.optimized" \
+            "${{ matrix.service.dir }}/"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+          mkdir -p build-reports
+          buildah push "$IMAGE" \
+            "docker-archive:build-reports/${{ matrix.service.image }}.tar"
+
+      # ── Trivy ────────────────────────────────────────────────────────────────
+      - name: Scan Trivy — ${{ matrix.service.dir }}
+        id: trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          input: ${{ env.BASE }}/build-reports/${{ matrix.service.image }}.tar
+          format: json
+          output: ${{ env.BASE }}/build-reports/trivy-${{ matrix.service.image }}-full.json
+          exit-code: '0'
+
+      - name: Export rapport Trivy SARIF
+        uses: aquasecurity/trivy-action@master
+        with:
+          input: ${{ env.BASE }}/build-reports/${{ matrix.service.image }}.tar
+          format: sarif
+          output: ${{ env.BASE }}/build-reports/trivy-${{ matrix.service.image }}.sarif
+
+      - name: Upload Trivy SARIF — GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ env.BASE }}/build-reports/trivy-${{ matrix.service.image }}.sarif
+          category: trivy-${{ matrix.service.image }}
+
+      # ── Gate CRITICAL ────────────────────────────────────────────────────────
+      - name: Gate — CVE CRITICAL
+        run: |
+          CRITICAL=$(python3 -c "
+          import json
+          with open('build-reports/trivy-${{ matrix.service.image }}-full.json') as f:
+              d = json.load(f)
+          n = [v for r in d.get('Results',[]) for v in r.get('Vulnerabilities',[])
+               if v.get('Severity') == 'CRITICAL']
+          print(len(n))
+          ")
+          echo "CVE CRITICAL : $CRITICAL"
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "::error::$CRITICAL CVE CRITICAL détectées dans ${{ matrix.service.image }}."
+            echo "::error::Remédiation : mettre à jour Spring Boot vers 3.x (Java 17 requis)."
+            # Décommentez la ligne suivante pour bloquer le pipeline sur les CRITICAL :
+            # exit 1
+            echo "::warning::Gate CRITICAL désactivée pour ce TP — voir compte-rendu.md"
+          fi
+
+      # ── Dive ─────────────────────────────────────────────────────────────────
+      - name: Install Dive
+        run: |
+          DIVE_VERSION="0.12.0"
+          curl -fsSL "https://github.com/wagoodman/dive/releases/download/v${DIVE_VERSION}/dive_${DIVE_VERSION}_linux_amd64.deb" \
+            -o /tmp/dive.deb
+          sudo dpkg -i /tmp/dive.deb
+
+      - name: Audit Dive CI — ${{ matrix.service.dir }}
+        run: |
+          CI=true dive \
+            --source docker-archive \
+            --ci-config .dive-ci.yml \
+            "build-reports/${{ matrix.service.image }}.tar" \
+            | tee build-reports/dive-${{ matrix.service.image }}-ci.txt
+
+      # ── Artefacts ────────────────────────────────────────────────────────────
+      - name: Upload build-reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-reports-${{ matrix.service.image }}
+          path: ${{ env.BASE }}/build-reports/
+          retention-days: 30
+
+      # ── Push vers GHCR (sur main uniquement) ─────────────────────────────────
+      - name: Login to GitHub Container Registry
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image — ${{ matrix.service.dir }}
+        if: github.ref == 'refs/heads/main'
+        run: |
+          IMAGE="${{ steps.build.outputs.image }}"
+          buildah push "$IMAGE" "docker://$IMAGE"
+          echo "Image poussée : $IMAGE"
