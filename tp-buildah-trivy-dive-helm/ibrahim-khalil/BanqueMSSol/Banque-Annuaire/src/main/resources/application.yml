@@ -1,0 +1,29 @@
+spring:
+  application:
+    name: eureka-server
+# Activation des endpoints pour le monitoring
+management:
+  endpoints:
+    web:
+      exposure:
+        include:
+          env,health,
+          info,metrics,
+          loggers,mappings, prometheus
+# Configure l'annuaire
+eureka:
+  instance:
+    hostname: localhost # indique que le serveur tourne en local
+  client:
+    # le serveur ne doit pas s'enregistrer sur lui-même
+    registerWithEureka: false
+    fetchRegistry: false
+
+#Configuration du server annuaire
+server:
+  port: 10001   # port du serveur
+
+# Configuration du log.
+logging:
+  level:
+    org.springframework.web: INFO # Choix du niveau de log affiché

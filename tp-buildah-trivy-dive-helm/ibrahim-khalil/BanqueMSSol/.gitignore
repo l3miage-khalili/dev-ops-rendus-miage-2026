@@ -7,5 +7,8 @@ build-reports/
 # Fichiers systèmes
 .DS_Store
 
+# Sujet du projet fournit par l'enseignant en md (non versionné)
+sujet.md
+
 # Fichiers IDE
 .idea/

@@ -1,0 +1,11 @@
+spring:
+  application:
+    name: comptesservice
+  profiles:
+    active: dev
+  # Adresse du service de configuration
+  config:
+    # SANS DOCKER COMPOSE
+    # import: optional:configserver:http://localhost:10003
+    # AVEC DOCKER COMPOSE
+    import: optional:configserver:http://bnkconfigsrv:10003
