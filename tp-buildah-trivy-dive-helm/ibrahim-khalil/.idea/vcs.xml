@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="VcsDirectoryMappings">
+    <mapping directory="$PROJECT_DIR$/../.." vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/BanqueMSSol/Banque-APIGateway" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/BanqueMSSol/Banque-Annuaire" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/BanqueMSSol/Banque-ClientService" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/BanqueMSSol/Banque-CompositeService" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/BanqueMSSol/Banque-CompteService" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/BanqueMSSol/Banque-configs" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/BanqueMSSol/config-prometheus" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/BanqueMSSol/miage-m2-ams-microbanque-generalconfig" vcs="Git" />
+  </component>
+</project>
