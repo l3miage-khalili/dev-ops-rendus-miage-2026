@@ -6,3 +6,6 @@ build-reports/
 
 # Fichiers systèmes
 .DS_Store
+
+# Fichiers IDE
+.idea/
