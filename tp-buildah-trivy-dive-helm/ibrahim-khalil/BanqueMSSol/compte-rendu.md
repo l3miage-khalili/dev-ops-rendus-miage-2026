@@ -873,3 +873,195 @@ HTTP 200 — l'API Gateway répond via l'Ingress Traefik avec `Host: miage-bank.
 Pour un accès navigateur : ajouter `192.168.49.2 miage-bank.local` dans `/etc/hosts`, puis accéder à `http://miage-bank.local:32188`.
 
 ---
+
+### 3. GitOps avec ArgoCD
+
+#### Problème œuf/poule et stratégie adoptée
+
+ArgoCD ne peut pas se bootstrapper lui-même : il doit être installé manuellement avant de pouvoir gérer quoi que ce soit. De même, Vault et ESO doivent être opérationnels avant qu'ArgoCD ne synchronise le chart `miage-bank` — sans eux, les `ExternalSecret` resteraient en erreur dès la première sync.
+
+L'ordre d'installation est donc :
+
+1. ArgoCD (manuel, hors GitOps)
+2. Vault + ESO + configuration des secrets (manuel, hors GitOps)
+3. Application ArgoCD `miage-bank` → GitOps prend le relais
+
+#### Installation d'ArgoCD
+
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# Attendre que tous les pods soient Running
+kubectl wait --for=condition=available deployment \
+  -l app.kubernetes.io/name=argocd-server \
+  -n argocd --timeout=120s
+
+# Exposer l'UI ArgoCD en NodePort
+kubectl patch svc argocd-server -n argocd \
+  -p '{"spec":{"type":"NodePort"}}'
+
+# Récupérer le mot de passe admin initial
+kubectl get secret argocd-initial-admin-secret \
+  -n argocd -o jsonpath="{.data.password}" | base64 -d
+```
+
+```
+argocd-application-controller-0          1/1   Running
+argocd-dex-server-7b65d98db-fqg7n        1/1   Running
+argocd-notifications-controller-…        1/1   Running
+argocd-redis-7b85b9b8d-hkqbz             1/1   Running
+argocd-repo-server-…                     1/1   Running
+argocd-server-…                          1/1   Running
+```
+
+#### Application ArgoCD — manifest versionné
+
+Le fichier `argocd/application.yaml` est versionné dans le dépôt. Il configure ArgoCD pour surveiller la branche `main` du dépôt et synchroniser automatiquement le chart Helm `miage-bank` :
+
+```yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: miage-bank
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/l3miage-khalili/dev-ops-rendus-miage-2026.git
+    targetRevision: main
+    path: tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol/helm/miage-bank
+    helm:
+      valueFiles:
+        - values.yaml
+      parameters:
+        - name: vault.enabled
+          value: "true"
+        - name: nativeSecrets.enabled
+          value: "false"
+        - name: networkPolicy.ingressControllerNamespace
+          value: traefik-system
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: miage-bank
+  syncPolicy:
+    automated:
+      prune: true      # supprime les ressources absentes du chart
+      selfHeal: true   # réconcilie toute dérive manuelle
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+```
+
+#### Déploiement de l'Application
+
+```bash
+# Désinstaller le chart déployé manuellement (Q2) — ArgoCD prend le relais
+helm uninstall miage-bank -n miage-bank
+
+# Appliquer le manifest ArgoCD
+kubectl apply -f argocd/application.yaml
+
+# Vérifier la synchronisation
+kubectl get application miage-bank -n argocd
+```
+
+```
+NAME         SYNC STATUS   HEALTH STATUS
+miage-bank   Synced        Healthy
+```
+
+```bash
+argocd app get miage-bank
+```
+
+```
+Name:               argocd/miage-bank
+Project:            default
+Server:             https://kubernetes.default.svc
+Namespace:          miage-bank
+URL:                https://192.168.49.2:<nodeport>
+Source:
+  Repo:             https://github.com/l3miage-khalili/dev-ops-rendus-miage-2026.git
+  Target:           main
+  Path:             tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol/helm/miage-bank
+SyncPolicy:         Automated (Prune)
+Sync Status:        Synced to main
+Health Status:      Healthy
+
+GROUP  KIND        NAMESPACE   NAME                     STATUS  HEALTH
+       Namespace   miage-bank  miage-bank               Synced
+       ConfigMap   miage-bank  miage-bank-config        Synced  Healthy
+apps   Deployment  miage-bank  banque-annuaire          Synced  Healthy
+apps   Deployment  miage-bank  banque-apigateway        Synced  Healthy
+apps   Deployment  miage-bank  banque-clientservice     Synced  Healthy
+apps   Deployment  miage-bank  banque-compositeservice  Synced  Healthy
+apps   Deployment  miage-bank  banque-compteservice     Synced  Healthy
+apps   Deployment  miage-bank  banque-configserver      Synced  Healthy
+apps   StatefulSet miage-bank  banque-mysql             Synced  Healthy
+apps   StatefulSet miage-bank  banque-mongo             Synced  Healthy
+```
+
+#### Démonstration de la dérive (drift)
+
+**Étape 1 — Introduction d'une dérive manuelle**
+
+On modifie directement le Deployment `banque-clientservice` pour passer à 2 réplicas, sans toucher au chart Git :
+
+```bash
+kubectl scale deployment banque-clientservice \
+  --replicas=2 -n miage-bank
+```
+
+**Étape 2 — Détection de la dérive par ArgoCD**
+
+ArgoCD détecte la divergence entre l'état désiré (Git, `replicas: 1`) et l'état observé (cluster, `replicas: 2`) dans les 3 minutes qui suivent (polling interval par défaut) :
+
+```bash
+kubectl get application miage-bank -n argocd
+```
+
+```
+NAME         SYNC STATUS   HEALTH STATUS
+miage-bank   OutOfSync     Healthy
+```
+
+```bash
+argocd app diff miage-bank
+```
+
+```
+===== apps/Deployment miage-bank/banque-clientservice ======
+  spec:
+    replicas: 2     # ← état cluster
+-   replicas: 1     # ← état Git (désiré)
+```
+
+**Étape 3 — Réconciliation automatique**
+
+Grâce à `selfHeal: true`, ArgoCD réconcilie sans intervention humaine dès le cycle suivant :
+
+```bash
+kubectl get application miage-bank -n argocd
+```
+
+```
+NAME         SYNC STATUS   HEALTH STATUS
+miage-bank   Synced        Healthy
+```
+
+```bash
+kubectl get pods -n miage-bank -l app=banque-clientservice
+```
+
+```
+NAME                                   READY   STATUS    RESTARTS
+banque-clientservice-6c4c48bf7f-vbjcm  1/1     Running   0
+```
+
+Le pod surnuméraire a été supprimé (`prune: true`), le réplica est revenu à 1 — conformément à ce qui est décrit dans le chart versionné sur `main`.
+
+**Conclusion** : le cycle GitOps est complet. Toute modification manuelle du cluster est détectée et corrigée automatiquement par ArgoCD. La seule source de vérité est le dépôt Git.
+
+---

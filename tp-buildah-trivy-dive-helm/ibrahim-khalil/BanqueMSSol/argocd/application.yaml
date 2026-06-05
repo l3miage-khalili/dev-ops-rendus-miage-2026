@@ -1,0 +1,51 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: miage-bank
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/l3miage-khalili/dev-ops-rendus-miage-2026.git
+    targetRevision: main
+    path: tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol/helm/miage-bank
+    helm:
+      valueFiles:
+        - values.yaml
+      parameters:
+        - name: vault.enabled
+          value: "true"
+        - name: nativeSecrets.enabled
+          value: "false"
+        - name: networkPolicy.ingressControllerNamespace
+          value: traefik-system
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: miage-bank
+
+  ignoreDifferences:
+    # ESO controller adds default fields not present in the Helm template
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /spec/data
+    # Kubernetes defaults these StatefulSet fields after creation
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/persistentVolumeClaimRetentionPolicy
+        - /spec/updateStrategy/rollingUpdate
+        - /spec/podManagementPolicy
+        - /spec/revisionHistoryLimit
+
+  syncPolicy:
+    automated:
+      prune: true      # supprime les ressources absentes du chart
+      selfHeal: true   # réconcilie toute dérive manuelle
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
