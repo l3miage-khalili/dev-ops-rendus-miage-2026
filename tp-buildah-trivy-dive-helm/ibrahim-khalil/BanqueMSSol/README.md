@@ -271,6 +271,69 @@ curl -H "Host: miage-bank.local" http://$(minikube ip):<nodeport>/actuator/healt
 # {"status":"UP","groups":["liveness","readiness"]}
 ```
 
+---
+
+## GitOps avec ArgoCD (Partie B — Question 3)
+
+### 1. Installer ArgoCD
+
+```bash
+kubectl create namespace argocd
+kubectl apply -n argocd \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+
+# Exposer l'UI en NodePort
+kubectl patch svc argocd-server -n argocd \
+  -p '{"spec":{"type":"NodePort"}}'
+
+# Mot de passe admin initial
+kubectl get secret argocd-initial-admin-secret \
+  -n argocd -o jsonpath="{.data.password}" | base64 -d
+```
+
+### 2. Déployer l'Application ArgoCD
+
+> **Prérequis** : Vault et ESO doivent être configurés avant cette étape
+> (voir section "Configurer Vault" ci-dessus).
+
+```bash
+# Désinstaller le déploiement Helm manuel si existant
+helm uninstall miage-bank -n miage-bank
+
+# Appliquer le manifest ArgoCD (versionné dans argocd/application.yaml)
+kubectl apply -f argocd/application.yaml
+```
+
+ArgoCD surveille la branche `main` du dépôt et synchronise automatiquement le chart
+`helm/miage-bank/` avec `prune: true` et `selfHeal: true`.
+
+```bash
+# Vérifier la synchronisation
+kubectl get application miage-bank -n argocd
+# NAME         SYNC STATUS   HEALTH STATUS
+# miage-bank   Synced        Healthy
+```
+
+### 3. Démonstration de la dérive
+
+```bash
+# 1. Introduire une dérive manuelle
+kubectl scale deployment banque-clientservice --replicas=2 -n miage-bank
+
+# 2. Constater OutOfSync (dans les ~3 minutes)
+kubectl get application miage-bank -n argocd
+# NAME         SYNC STATUS   HEALTH STATUS
+# miage-bank   OutOfSync     Healthy
+
+# 3. ArgoCD réconcilie automatiquement (selfHeal: true)
+# → replicas revient à 1, pod surnuméraire supprimé (prune: true)
+kubectl get application miage-bank -n argocd
+# NAME         SYNC STATUS   HEALTH STATUS
+# miage-bank   Synced        Healthy
+```
+
+---
+
 ### Notes sur la configuration Spring Boot
 
 Plusieurs services nécessitent des surcharges pour fonctionner en K8s (noms DNS Docker Compose
