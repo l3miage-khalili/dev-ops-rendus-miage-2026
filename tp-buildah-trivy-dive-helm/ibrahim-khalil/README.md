@@ -1,4 +1,5 @@
-nom et prénoms: Ibrahim Goukouni KHALIL
+# nom et prénoms: Ibrahim Goukouni KHALIL
+
 # MIAGE-Bank — Buildah · Trivy · Dive · Helm · Kubernetes
 
 Ce dépôt contient l'application micro-services MIAGE-Bank ainsi que la chaîne de build OCI
@@ -30,24 +31,26 @@ L'analyse détaillée (résultats, CVE, mesures Dive, comparaisons) est dans
 ## Structure du dépôt
 
 ```
-BanqueMSSol/
-├── Banque-Annuaire/
-│   ├── Containerfile              # Dockerfile original (référence)
-│   └── Containerfile.optimized    # Build optimisé (utilisé par build.sh)
-├── Banque-ConfigServer/           # idem
-├── Banque-ClientService/          # idem
-├── Banque-CompteService/          # idem
-├── Banque-CompositeService/       # idem
-├── Banque-APIGateway/             # idem
-├── scripts/
-│   ├── build.sh                   # Chaîne de build intégrée (Q5)
-│   └── buildah-native.sh          # Build layer-par-layer sans Containerfile (Q2)
-├── build-reports/                 # Rapports générés (Trivy JSON/SARIF, Dive CI)
-├── helm/miage-bank/               # Chart Helm (Partie B)
-├── .dive-ci.yml                   # Seuils Dive CI
-├── .github/workflows/build.yml    # Pipeline GitHub Actions (bonus)
+ibrahim-khalil/
+├── README.md                      # Ce fichier
 ├── compte-rendu.md                # Rapport d'analyse complet
-└── README.md                      # Ce fichier
+└── BanqueMSSol/
+    ├── Banque-Annuaire/
+    │   ├── Containerfile              # Dockerfile original (référence)
+    │   └── Containerfile.optimized    # Build optimisé (utilisé par build.sh)
+    ├── Banque-ConfigServer/           # idem
+    ├── Banque-ClientService/          # idem
+    ├── Banque-CompteService/          # idem
+    ├── Banque-CompositeService/       # idem
+    ├── Banque-APIGateway/             # idem
+    ├── scripts/
+    │   ├── build.sh                   # Chaîne de build intégrée (Q5)
+    │   └── buildah-native.sh          # Build layer-par-layer sans Containerfile (Q2)
+    ├── build-reports/                 # Rapports générés (Trivy JSON/SARIF, Dive CI)
+    ├── helm/miage-bank/               # Chart Helm (Partie B)
+    ├── argocd/
+    │   └── application.yaml           # Manifest ArgoCD (GitOps Q3)
+    └── .dive-ci.yml                   # Seuils Dive CI
 ```
 
 ---
