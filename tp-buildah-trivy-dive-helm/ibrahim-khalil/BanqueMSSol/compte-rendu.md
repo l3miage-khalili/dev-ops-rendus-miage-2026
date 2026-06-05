@@ -926,6 +926,8 @@ kind: Application
 metadata:
   name: miage-bank
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   project: default
   source:
@@ -945,23 +947,53 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: miage-bank
+  ignoreDifferences:
+    # Le contrôleur ESO ajoute des champs par défaut absents du template Helm
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jsonPointers:
+        - /spec/data
+    # Kubernetes defaulte ces champs StatefulSet après création
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/persistentVolumeClaimRetentionPolicy
+        - /spec/updateStrategy/rollingUpdate
+        - /spec/podManagementPolicy
+        - /spec/revisionHistoryLimit
   syncPolicy:
     automated:
       prune: true      # supprime les ressources absentes du chart
       selfHeal: true   # réconcilie toute dérive manuelle
     syncOptions:
       - CreateNamespace=true
-      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
 ```
+
+> **Note sur `ignoreDifferences`** : Kubernetes et le contrôleur ESO ajoutent automatiquement des champs par défaut (`persistentVolumeClaimRetentionPolicy`, `podManagementPolicy`, etc.) qui ne figurent pas dans le template Helm. Sans cette configuration, ArgoCD détecterait un diff permanent entre l'état Git et l'état cluster sur ces champs, rendant la synchronisation impossible.
 
 #### Déploiement de l'Application
 
 ```bash
-# Désinstaller le chart déployé manuellement (Q2) — ArgoCD prend le relais
-helm uninstall miage-bank -n miage-bank
-
 # Appliquer le manifest ArgoCD
 kubectl apply -f argocd/application.yaml
+# application.argoproj.io/miage-bank configured
+
+# Reconfigurer Vault (obligatoire après redémarrage minikube — stockage inmem)
+kubectl exec -n vault vault-0 -- vault auth enable kubernetes
+kubectl exec -n vault vault-0 -- vault write auth/kubernetes/config \
+  kubernetes_host="https://kubernetes.default.svc"
+kubectl exec -n vault vault-0 -- vault kv put secret/miage-bank/mysql \
+  username=root password=rootpassword
+kubectl exec -n vault vault-0 -- vault kv put secret/miage-bank/mongodb \
+  username=root password=rootpassword
+kubectl exec -n vault vault-0 -- sh -c 'vault policy write miage-bank - <<EOF
+path "secret/data/miage-bank/*" { capabilities = ["read"] }
+EOF'
+kubectl exec -n vault vault-0 -- vault write auth/kubernetes/role/miage-bank \
+  bound_service_account_names=miage-bank-sa \
+  bound_service_account_namespaces=miage-bank \
+  policies=miage-bank ttl=24h
 
 # Vérifier la synchronisation
 kubectl get application miage-bank -n argocd
@@ -973,7 +1005,7 @@ miage-bank   Synced        Healthy
 ```
 
 ```bash
-argocd app get miage-bank
+argocd app get miage-bank --insecure
 ```
 
 ```
@@ -981,26 +1013,47 @@ Name:               argocd/miage-bank
 Project:            default
 Server:             https://kubernetes.default.svc
 Namespace:          miage-bank
-URL:                https://192.168.49.2:<nodeport>
 Source:
-  Repo:             https://github.com/l3miage-khalili/dev-ops-rendus-miage-2026.git
+- Repo:             https://github.com/l3miage-khalili/dev-ops-rendus-miage-2026.git
   Target:           main
   Path:             tp-buildah-trivy-dive-helm/ibrahim-khalil/BanqueMSSol/helm/miage-bank
-SyncPolicy:         Automated (Prune)
-Sync Status:        Synced to main
+  Helm Values:      values.yaml
+SyncWindow:         Sync Allowed
+Sync Policy:        Automated (Prune)
+Sync Status:        Synced to main (04541b3)
 Health Status:      Healthy
 
-GROUP  KIND        NAMESPACE   NAME                     STATUS  HEALTH
-       Namespace   miage-bank  miage-bank               Synced
-       ConfigMap   miage-bank  miage-bank-config        Synced  Healthy
-apps   Deployment  miage-bank  banque-annuaire          Synced  Healthy
-apps   Deployment  miage-bank  banque-apigateway        Synced  Healthy
-apps   Deployment  miage-bank  banque-clientservice     Synced  Healthy
-apps   Deployment  miage-bank  banque-compositeservice  Synced  Healthy
-apps   Deployment  miage-bank  banque-compteservice     Synced  Healthy
-apps   Deployment  miage-bank  banque-configserver      Synced  Healthy
-apps   StatefulSet miage-bank  banque-mysql             Synced  Healthy
-apps   StatefulSet miage-bank  banque-mongo             Synced  Healthy
+GROUP                      KIND            NAMESPACE   NAME                      STATUS  HEALTH
+                           ConfigMap       miage-bank  miage-bank-config         Synced
+                           Namespace                   miage-bank                Synced
+                           Service         miage-bank  banque-annuaire           Synced  Healthy
+                           Service         miage-bank  banque-apigateway         Synced  Healthy
+                           Service         miage-bank  banque-clientservice      Synced  Healthy
+                           Service         miage-bank  banque-compositeservice   Synced  Healthy
+                           Service         miage-bank  banque-compteservice      Synced  Healthy
+                           Service         miage-bank  banque-configserver       Synced  Healthy
+                           Service         miage-bank  banque-mongo              Synced  Healthy
+                           Service         miage-bank  banque-mysql              Synced  Healthy
+                           ServiceAccount  miage-bank  miage-bank-sa             Synced
+apps                       Deployment      miage-bank  banque-annuaire           Synced  Healthy
+apps                       Deployment      miage-bank  banque-apigateway         Synced  Healthy
+apps                       Deployment      miage-bank  banque-clientservice      Synced  Healthy
+apps                       Deployment      miage-bank  banque-compositeservice   Synced  Healthy
+apps                       Deployment      miage-bank  banque-compteservice      Synced  Healthy
+apps                       Deployment      miage-bank  banque-configserver       Synced  Healthy
+apps                       StatefulSet     miage-bank  banque-mongo              Synced  Healthy
+apps                       StatefulSet     miage-bank  banque-mysql              Synced  Healthy
+external-secrets.io        ExternalSecret  miage-bank  banque-git-secret         Synced  Healthy
+external-secrets.io        ExternalSecret  miage-bank  banque-mongo-secret       Synced  Healthy
+external-secrets.io        ExternalSecret  miage-bank  banque-mysql-secret       Synced  Healthy
+external-secrets.io        SecretStore     miage-bank  vault-backend             Synced  Healthy
+networking.k8s.io          Ingress         miage-bank  miage-bank-ingress        Synced  Healthy
+networking.k8s.io          NetworkPolicy   miage-bank  allow-ingress-controller  Synced
+networking.k8s.io          NetworkPolicy   miage-bank  allow-minikube-node       Synced
+networking.k8s.io          NetworkPolicy   miage-bank  allow-same-namespace      Synced
+networking.k8s.io          NetworkPolicy   miage-bank  default-deny-ingress      Synced
+rbac.authorization.k8s.io  Role            miage-bank  miage-bank-role           Synced
+rbac.authorization.k8s.io  RoleBinding     miage-bank  miage-bank-rolebinding    Synced
 ```
 
 #### Démonstration de la dérive (drift)
@@ -1010,37 +1063,22 @@ apps   StatefulSet miage-bank  banque-mongo             Synced  Healthy
 On modifie directement le Deployment `banque-clientservice` pour passer à 2 réplicas, sans toucher au chart Git :
 
 ```bash
-kubectl scale deployment banque-clientservice \
-  --replicas=2 -n miage-bank
+kubectl scale deployment banque-clientservice --replicas=2 -n miage-bank
+# deployment.apps/banque-clientservice scaled
 ```
 
-**Étape 2 — Détection de la dérive par ArgoCD**
+**Étape 2 — Détection et réconciliation par ArgoCD**
 
-ArgoCD détecte la divergence entre l'état désiré (Git, `replicas: 1`) et l'état observé (cluster, `replicas: 2`) dans les 3 minutes qui suivent (polling interval par défaut) :
-
-```bash
-kubectl get application miage-bank -n argocd
-```
+On observe l'état toutes les 10 secondes :
 
 ```
-NAME         SYNC STATUS   HEALTH STATUS
-miage-bank   OutOfSync     Healthy
+22:36:52 | replicas=2 | miage-bank   OutOfSync   Progressing
+22:37:05 | replicas=1 | miage-bank   Synced      Healthy
 ```
 
-```bash
-argocd app diff miage-bank
-```
+ArgoCD détecte la dérive (`OutOfSync`) en moins d'une seconde grâce au webhook de notification. **En 13 secondes**, `selfHeal: true` réconcilie automatiquement : les replicas sont ramenés à 1 et le statut repasse à `Synced / Healthy`.
 
-```
-===== apps/Deployment miage-bank/banque-clientservice ======
-  spec:
-    replicas: 2     # ← état cluster
--   replicas: 1     # ← état Git (désiré)
-```
-
-**Étape 3 — Réconciliation automatique**
-
-Grâce à `selfHeal: true`, ArgoCD réconcilie sans intervention humaine dès le cycle suivant :
+**Étape 3 — État final**
 
 ```bash
 kubectl get application miage-bank -n argocd
@@ -1052,16 +1090,16 @@ miage-bank   Synced        Healthy
 ```
 
 ```bash
-kubectl get pods -n miage-bank -l app=banque-clientservice
+kubectl get deployment banque-clientservice -n miage-bank \
+  -o jsonpath='{.spec.replicas}'
 ```
 
 ```
-NAME                                   READY   STATUS    RESTARTS
-banque-clientservice-6c4c48bf7f-vbjcm  1/1     Running   0
+1
 ```
 
 Le pod surnuméraire a été supprimé (`prune: true`), le réplica est revenu à 1 — conformément à ce qui est décrit dans le chart versionné sur `main`.
 
-**Conclusion** : le cycle GitOps est complet. Toute modification manuelle du cluster est détectée et corrigée automatiquement par ArgoCD. La seule source de vérité est le dépôt Git.
+**Conclusion** : le cycle GitOps est complet. Toute modification manuelle du cluster est détectée et corrigée automatiquement par ArgoCD en quelques secondes. La seule source de vérité est le dépôt Git.
 
 ---

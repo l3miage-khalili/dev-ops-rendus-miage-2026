@@ -320,12 +320,12 @@ kubectl get application miage-bank -n argocd
 # 1. Introduire une dérive manuelle
 kubectl scale deployment banque-clientservice --replicas=2 -n miage-bank
 
-# 2. Constater OutOfSync (dans les ~3 minutes)
+# 2. Constater OutOfSync (quasi-immédiat via webhook, ~13 secondes)
 kubectl get application miage-bank -n argocd
 # NAME         SYNC STATUS   HEALTH STATUS
-# miage-bank   OutOfSync     Healthy
+# miage-bank   OutOfSync     Progressing
 
-# 3. ArgoCD réconcilie automatiquement (selfHeal: true)
+# 3. ArgoCD réconcilie automatiquement (selfHeal: true) en ~13 secondes
 # → replicas revient à 1, pod surnuméraire supprimé (prune: true)
 kubectl get application miage-bank -n argocd
 # NAME         SYNC STATUS   HEALTH STATUS
